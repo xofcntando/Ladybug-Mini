@@ -31,3 +31,6 @@ Desktop.ini
 *.swo
 
 data/
+
+# YouTube login cookies - never commit
+cookies.txt

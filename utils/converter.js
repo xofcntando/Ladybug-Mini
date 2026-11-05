@@ -13,10 +13,13 @@ const fs = require('fs')
 const path = require('path')
 const { spawn } = require('child_process')
 
-let ffmpegPath = 'ffmpeg'
+// Resolve a *working* ffmpeg (env override -> ffmpeg-static file that exists -> system ffmpeg)
+let ffmpegPath
 try {
-  ffmpegPath = require('ffmpeg-static') || 'ffmpeg'
-} catch { /* use system ffmpeg */ }
+  ffmpegPath = require('./ffmpeg').getFfmpegPath() || 'ffmpeg'
+} catch {
+  ffmpegPath = 'ffmpeg'
+}
 
 function ffmpeg(buffer, args = [], ext = '', ext2 = '') {
   return new Promise(async (resolve, reject) => {

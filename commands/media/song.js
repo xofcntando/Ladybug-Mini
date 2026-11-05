@@ -8,6 +8,7 @@ const path = require('path');
 const axios = require('axios');
 const APIs = require('../../utils/api');
 const { toAudio } = require('../../utils/converter');
+const { ytdlpAudio } = require('../../utils/ytdlp');
 const config = require('../../config');
 
 const UA =
@@ -301,16 +302,18 @@ module.exports = {
       let audioBuffer;
       let downloadSuccess = false;
 
-      // Hector first, Knight second. Prince and the rest are fallbacks. Prexzy googlevideo URLs are IP-locked → skip early.
+      // Knight API first (most reliable), then the rest as fallbacks.
+      // Hector is notoriously slow (2x ~25s timeouts) so it goes last; a local
+      // yt-dlp download is attempted after all HTTP APIs fail.
       const apiMethods = [
-        { name: 'Hector', method: () => hectorSongDownload(video.url) },
         { name: 'Knight API', method: () => knightSongDownload(video.url) },
         { name: 'Prince API', method: () => princeSongDownload(video.url) },
-        { name: 'Prexzy', method: () => prexzySongDownload(video.url) },
         { name: 'EliteProTech', method: () => APIs.getEliteProTechDownloadByUrl(video.url) },
         { name: 'Yupra', method: () => APIs.getYupraDownloadByUrl(video.url) },
         { name: 'Okatsu', method: () => APIs.getOkatsuDownloadByUrl(video.url) },
         { name: 'Izumi', method: () => APIs.getIzumiDownloadByUrl(video.url) },
+        { name: 'Prexzy', method: () => prexzySongDownload(video.url) },
+        { name: 'Hector', method: () => hectorSongDownload(video.url) },
       ];
 
       for (const apiMethod of apiMethods) {
@@ -359,6 +362,21 @@ module.exports = {
         } catch (apiErr) {
           console.log(`${apiMethod.name} API failed:`, apiErr.message);
           continue;
+        }
+      }
+
+      if (!downloadSuccess || !audioBuffer) {
+        // Last resort: local yt-dlp (works when the host has valid cookies/proxy)
+        try {
+          console.log('[song] HTTP APIs failed, trying local yt-dlp...');
+          const local = await ytdlpAudio(video.url);
+          if (local?.buffer?.length) {
+            audioBuffer = local.buffer;
+            downloadSuccess = true;
+            console.log(`[song] OK via yt-dlp (${audioBuffer.length} bytes)`);
+          }
+        } catch (ytdlpErr) {
+          console.log('[song] yt-dlp fallback failed:', ytdlpErr.message);
         }
       }
 

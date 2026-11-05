@@ -1924,6 +1924,23 @@ const initializeAntiCall = (sock) => {
   });
 };
 
+/**
+ * Hot-reload every command module without restarting the process.
+ * Purges the require cache for files under /commands, then rebuilds the
+ * in-memory registry in place (the map is mutable, so live references keep
+ * working). Returns the new command-entry count.
+ */
+function reloadCommands() {
+  const commandsPath = path.join(__dirname, 'commands');
+  for (const key of Object.keys(require.cache)) {
+    if (key.startsWith(commandsPath)) delete require.cache[key];
+  }
+  const fresh = loadCommands();
+  commands.clear();
+  for (const [name, cmd] of fresh) commands.set(name, cmd);
+  return commands.size;
+}
+
 module.exports = {
   handleMessage,
   handleGroupUpdate,
@@ -1942,5 +1959,6 @@ module.exports = {
   isBotLikeMessageId,
   getGroupMetadata,
   peekGroupMetadata,
-  findParticipant
+  findParticipant,
+  reloadCommands
 };

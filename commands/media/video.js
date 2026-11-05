@@ -8,7 +8,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const yts = require('yt-search');
 const axios = require('axios');
-const ffmpegPath = require('ffmpeg-static');
+const { getFfmpegPath, hasFfmpeg } = require('../../utils/ffmpeg');
+const ffmpegPath = getFfmpegPath();
 const APIs = require('../../utils/api');
 const config = require('../../config');
 const { ytdlpVideo, hasCookies } = require('../../utils/ytdlp');
@@ -209,9 +210,16 @@ function runFfmpeg(args) {
 
 function inspectMedia(file) {
   return new Promise((resolve) => {
+    if (!ffmpegPath) {
+      // No working ffmpeg: report unknown media so the caller can skip transcoding.
+      return resolve({ video: '', audio: '', height: 0, noFfmpeg: true });
+    }
     const child = spawn(ffmpegPath, ['-hide_banner', '-i', file], { windowsHide: true });
     let err = '';
     child.stderr.on('data', (chunk) => { err += chunk.toString(); });
+    // Without this handler a missing binary emits an unhandled 'error' event
+    // and crashes the whole process.
+    child.on('error', () => resolve({ video: '', audio: '', height: 0, noFfmpeg: true }));
     child.on('close', () => {
       const video = /Stream #\d+:\d+.*Video:\s*([a-z0-9]+)/i.exec(err)?.[1]?.toLowerCase() || '';
       const audio = /Stream #\d+:\d+.*Audio:\s*([a-z0-9]+)/i.exec(err)?.[1]?.toLowerCase() || '';
@@ -229,6 +237,11 @@ function looksLikeMedia(buf) {
 
 async function toWhatsAppMp4(input, output) {
   const info = await inspectMedia(input);
+  // No ffmpeg on the host: pass the file through untouched rather than crash.
+  if (info.noFfmpeg) {
+    fs.copyFileSync(input, output);
+    return;
+  }
   const h264 = info.video === 'h264';
   const aac = !info.audio || info.audio === 'aac';
   if (h264 && aac) {
@@ -263,6 +276,14 @@ async function sendVideoBuffer(sock, jid, msg, source, title) {
     await toWhatsAppMp4(input, output);
     const video = fs.readFileSync(output);
     if (!looksLikeMedia(video)) throw new Error('Converted file is not a video');
+    const MAX = 64 * 1024 * 1024; // WhatsApp media limit
+    if (video.length > MAX) {
+      const mb = (video.length / (1024 * 1024)).toFixed(1);
+      await sock.sendMessage(jid, {
+        text: `⚠️ Video is ${mb} MB, which exceeds WhatsApp's 64 MB limit. Try a shorter video or lower quality.`,
+      }, { quoted: msg });
+      return;
+    }
     await sock.sendMessage(jid, {
       video,
       mimetype: 'video/mp4',

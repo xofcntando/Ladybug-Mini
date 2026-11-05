@@ -268,7 +268,7 @@ function detectAudioFormat(buf) {
 
 module.exports = {
   name: 'song',
-  aliases: ['play', 'music', 'yta'],
+  aliases: ['music', 'yta', 'mp3', 'songdl'],
   category: 'media',
   description: 'Download audio from YouTube',
   usage: '.song <song name or YouTube link>',

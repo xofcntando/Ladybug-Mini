@@ -9,7 +9,8 @@ const { getTempDir, deleteTempFile } = require('../../utils/tempManager');
 const { fitWhatsAppImage } = require('../../utils/fitImage');
 const config = require('../../config');
 
-const BASE = `${config.ladybugApiUrl}/api/anime/random`;
+const BASE = `${config.ladybugApiUrl}/v1/anime/image`;
+const CATEGORY = 'waifu';
 const API_KEY = config.ladybugApiKey;
 
 module.exports = {
@@ -20,7 +21,7 @@ module.exports = {
   usage: 'random',
   execute: async (sock, msg, args, extra) => {
     try {
-      const url = `${BASE}?apikey=${API_KEY}`;
+      const url = `${BASE}?category=${CATEGORY}&apikey=${API_KEY}`;
       const response = await axios.get(url, {
         headers: {
           'User-Agent': 'LadybugMini/1.0',
@@ -29,7 +30,7 @@ module.exports = {
         timeout: 30000
       });
       
-      const result = response.data?.result;
+      const result = response.data?.result || response.data;
       if (!result) {
         throw new Error(response.data?.message || response.data?.error || 'Invalid API response: missing anime data');
       }

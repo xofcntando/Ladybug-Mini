@@ -33,21 +33,21 @@ function caption(quality) {
 }
 
 async function fetchElite(url) {
-  const { data } = await axios.get('https://eliteprotech-apis.zone.id/x', {
-    params: { url },
-    timeout: 30000,
+  // Our own self-hosted Ladybug API (yt-dlp handles X/Twitter)
+  const { data } = await axios.get(`${config.ladybugApiUrl}/v1/media/download`, {
+    params: { apikey: config.ladybugApiKey, url, type: 'video' },
+    timeout: 180000,
     headers: HEADERS,
   });
 
-  if (data?.status !== 'success') throw new Error('Primary API returned no success');
+  if (!data?.success || !data?.file?.download_url) throw new Error('Ladybug API returned no media');
 
-  const videos = (data.videos || []).filter((v) => isMediaUrl(v?.url));
-  const mp3Url = isMediaUrl(data.mp3?.url) ? data.mp3.url : null;
+  const videos = [{ url: data.file.download_url }].filter((v) => isMediaUrl(v?.url));
   const thumbnail = isMediaUrl(data.thumbnail) ? data.thumbnail : null;
 
-  if (!videos.length && !thumbnail && !mp3Url) throw new Error('No media in primary response');
+  if (!videos.length && !thumbnail) throw new Error('No media in Ladybug response');
 
-  return { videos, mp3Url, thumbnail };
+  return { videos, mp3Url: null, thumbnail };
 }
 
 async function fetchPrince(url) {

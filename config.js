@@ -72,14 +72,15 @@ module.exports = {
 
       // Ladybug Mini media API (song/video/tiktok/facebook/instagram downloaders)
     // Change once here — all media commands read from this.
-    mediaApiUrl: (process.env.YT_API_URL || 'https://knightbotapi.stream').replace(/\/$/, ''),
-    mediaApiKey: process.env.YT_API_KEY || 'knight',
+    // Defaults to our own self-hosted Ladybug API; override with YT_API_URL if you fork.
+    mediaApiUrl: (process.env.YT_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
+    mediaApiKey: process.env.YT_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     // Ladybug public API (reactions GIFs, etc.) — powered by Ntandomods
-    ladybugApiUrl: (process.env.LADYBUG_API_URL || 'https://knightbotapi.stream').replace(/\/$/, ''),
-    ladybugApiKey: process.env.LADYBUG_API_KEY || 'knight',
+    ladybugApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
+    ladybugApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     // Backward-compatible aliases (older modules may still read these keys)
-    knightApiUrl: (process.env.LADYBUG_API_URL || 'https://knightbotapi.stream').replace(/\/$/, ''),
-    knightApiKey: process.env.LADYBUG_API_KEY || 'knight',
+    knightApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
+    knightApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     princeApiUrl: (process.env.PRINCE_API_URL || 'https://api.princetechn.com').replace(/\/$/, ''),
     princeApiKey: process.env.PRINCE_API_KEY || 'prince',
 

@@ -1,6 +1,6 @@
 /**
  * AI Chatbot - Natural WhatsApp chat on @mention or reply
- * Text: api.princetechn.com/api/ai/letmegpt
+ * Text: our own Ladybug API /v1/ai/chat
  */
 
 const axios = require('axios');
@@ -169,15 +169,16 @@ function buildPrompt(userMessage, userContext) {
 }
 
 async function getAIResponse(userMessage, userContext) {
-  const res = await axios.get('https://api.princetechn.com/api/ai/letmegpt', {
-    params: {
-      apikey: 'prince',
-      q: buildPrompt(userMessage, userContext),
-    },
+  const config = require('../../config');
+  const res = await axios.post(`${config.ladybugApiUrl}/v1/ai/chat`, {
+    prompt: buildPrompt(userMessage, userContext),
+  }, {
+    params: { apikey: config.ladybugApiKey },
+    headers: { 'Content-Type': 'application/json' },
     timeout: 45000,
   });
 
-  const reply = extractText(res.data?.result ?? res.data?.response ?? res.data?.msg ?? res.data);
+  const reply = extractText(res.data?.text ?? res.data?.result ?? res.data?.response ?? res.data?.msg ?? res.data);
   if (isBadReply(reply)) throw new Error(`Bad AI reply: ${String(reply).slice(0, 120)}`);
   return cleanResponse(reply, userMessage);
 }

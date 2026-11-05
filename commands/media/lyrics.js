@@ -39,20 +39,24 @@ module.exports = {
         console.log('Vreden API failed, trying next...');
       }
       
-      // API 2: Siputzx (fallback)
+      // API 2: our own Ladybug API (LRCLIB, self-hosted)
       if (!lyricsData) {
         try {
-          const response = await axios.get(`https://api.siputzx.my.id/api/s/lyrics?query=${encodeURIComponent(query)}`);
-          if (response.data && response.data.status && response.data.data) {
+          const response = await axios.get(`${config.ladybugApiUrl}/v1/lyrics`, {
+            params: { apikey: config.ladybugApiKey, query },
+            timeout: 30000,
+          });
+          const d = response.data || {};
+          if (d.lyrics) {
             lyricsData = {
-              title: response.data.data.title,
-              artist: response.data.data.artist,
-              lyrics: response.data.data.lyrics,
-              thumbnail: response.data.data.image
+              title: d.title,
+              artist: d.artist,
+              lyrics: d.lyrics,
+              thumbnail: d.thumbnail || d.image || null
             };
           }
         } catch (err) {
-          console.log('Siputzx API failed');
+          console.log('Ladybug lyrics API failed');
         }
       }
       

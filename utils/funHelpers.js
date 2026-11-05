@@ -440,12 +440,15 @@ function parseAiText(data) {
 }
 
 async function askPrinceAi(prompt) {
-  const res = await axios.get('https://api.princetechn.com/api/ai/chat', {
-    params: { apikey: 'prince', q: prompt },
+  // Our own self-hosted Ladybug API
+  const config = require('../config');
+  const res = await axios.post(`${config.ladybugApiUrl}/v1/ai/chat`, { prompt }, {
+    params: { apikey: config.ladybugApiKey },
+    headers: { 'Content-Type': 'application/json' },
     timeout: 30000,
   });
   const text = parseAiText(res.data);
-  if (!text) throw new Error('Empty prince response');
+  if (!text) throw new Error('Empty Ladybug AI response');
   return text;
 }
 

@@ -59,7 +59,7 @@ const APIs = {
     try {
       const path = type === 'audio' ? '/api/download/ytaudio' : '/api/download/ytmp4';
       const response = await api.get(`${APIs.base()}${path}`, {
-        params: { apikey: APIs.key(), url, format: type === 'audio' ? '128kbps' : '720p' },
+        params: { apikey: APIs.key(), url, format: type === 'audio' ? '128kbps' : `${require('../config').videoQuality || '360'}p` },
         timeout: 180000,
       });
       return response.data;

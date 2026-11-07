@@ -76,6 +76,8 @@ module.exports = {
     mediaApiUrl: (process.env.YT_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
     mediaApiKey: process.env.YT_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     // Ladybug public API (reactions GIFs, etc.) — powered by Ntandomods
+    // Video height for YouTube MP4 downloads (360 = small + fast; WhatsApp-friendly). Override with VIDEO_QUALITY.
+    videoQuality: String(process.env.VIDEO_QUALITY || '360').replace(/\D/g, '') || '360',
     ladybugApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
     ladybugApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     // Backward-compatible aliases (older modules may still read these keys)

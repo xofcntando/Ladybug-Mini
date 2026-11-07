@@ -40,16 +40,18 @@ function toYouTubeWatchUrl(input) {
   return id ? `https://youtu.be/${id}` : String(input || '').trim();
 }
 
-function videoQuality(value, fallback = '720') {
+const DEFAULT_QUALITY = String(config.videoQuality || '360');
+
+function videoQuality(value, fallback = DEFAULT_QUALITY) {
   return String(value || '').match(/(\d{3,4})/)?.[1] || fallback;
 }
 
-function pickQualityUrl(videos, wanted = '720') {
+function pickQualityUrl(videos, wanted = DEFAULT_QUALITY) {
   if (!videos || typeof videos !== 'object' || Array.isArray(videos)) return null;
+  // Wanted height first, then smaller ones (small files send faster), only then larger ones.
   const ladder = ['1080', '720', '480', '360', '240', '144'];
-  const want = videoQuality(wanted);
-  const start = Math.max(0, ladder.indexOf(want));
-  const order = ladder.slice(start).concat(ladder.slice(0, start));
+  const want = Number(videoQuality(wanted));
+  const order = ladder.filter((q) => Number(q) <= want).concat(ladder.filter((q) => Number(q) > want).reverse());
   for (const quality of order) {
     const url = videos[quality] || videos[`${quality}p`];
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) return url;
@@ -63,7 +65,7 @@ function princeFileUrl(result, quality) {
   return pickQualityUrl(result?.videos, quality);
 }
 
-async function princeVideoDownload(url, quality = '720') {
+async function princeVideoDownload(url, quality = DEFAULT_QUALITY) {
   const watchUrl = toYouTubeWatchUrl(url);
   const q = videoQuality(quality);
   const endpoint = new URL('/api/download/ytvideo', PRINCE_API);
@@ -84,7 +86,7 @@ async function princeVideoDownload(url, quality = '720') {
   return { title: result?.title || 'Video', dl_url, sourceUrl: watchUrl };
 }
 
-async function hectorVideoDownload(url, quality = '720') {
+async function hectorVideoDownload(url, quality = DEFAULT_QUALITY) {
   const { data, status } = await axios.get(HECTOR_API, {
     params: { url: toYouTubeWatchUrl(url) },
     timeout: 30000,
@@ -109,28 +111,42 @@ function formatInfo(video) {
   return `🎬 *${video.title}*\n⏱ Duration: ${video.timestamp || '—'}\n👀 Views: ${views}`;
 }
 
-async function ladybugVideoDownload({ url, query, format = '720p' }) {
-  const params = { apikey: YT_API_KEY, format };
-  if (url) params.url = url;
-  else params.query = query;
+async function ladybugVideoDownload({ url, query, quality = DEFAULT_QUALITY }) {
+  // Same call as: GET /v1/yt/play?query=...&type=video&quality=360 (by link: /v1/media/ytmp4?url=...&quality=360).
+  const q = videoQuality(quality);
+  const params = { apikey: YT_API_KEY, quality: q };
+  let route;
+  if (url) {
+    route = '/v1/media/ytmp4';
+    params.url = url;
+  } else {
+    route = '/v1/yt/play';
+    params.query = query;
+    params.type = 'video';
+  }
 
-  const { data } = await axios.get(`${YT_API}/api/download/ytmp4`, {
+  const { data, status } = await axios.get(`${YT_API}${route}`, {
     params,
     timeout: 180000,
+    validateStatus: () => true,
     headers: { Accept: 'application/json', 'User-Agent': UA },
   });
 
-  if (!data?.success) {
-    throw new Error(data?.result?.error || 'Ladybug API failed');
+  if (status >= 400 || data?.success === false) {
+    throw new Error(data?.detail || data?.error || `Ladybug API HTTP ${status}`);
   }
 
-  const dl_url = pickUrl(data.result);
+  const file = data?.file;
+  // /dl/<id> is the public link (no key needed); /v1/files/<id>/download needs the key.
+  const dl_url = file?.id
+    ? `${YT_API}/dl/${file.id}`
+    : (file?.download_url ? `${file.download_url}${file.download_url.includes('?') ? '&' : '?'}apikey=${encodeURIComponent(YT_API_KEY)}` : null);
   if (!dl_url) throw new Error('Ladybug API returned no download URL');
 
   return {
-    title: data.result?.title || 'Video',
+    title: data.title || 'Video',
     dl_url,
-    sourceUrl: data.result?.url || url,
+    sourceUrl: data.webpage_url || url,
   };
 }
 
@@ -161,12 +177,15 @@ async function resolveVideo({ url, query }) {
   // Local yt-dlp doesn't depend on shared API keys (which hit 429 / daily limits), so it is the
   // reliable path. With cookies configured it goes first; otherwise right after the quick APIs.
   const steps = [
+    // 360p by default (config.videoQuality). A typed name goes to /v1/yt/play (the API searches and fails over
+    // between results itself); a link, or the retry below, goes to /v1/media/ytmp4.
+    ...(query && !url ? [['Ladybug (search)', () => ladybugVideoDownload({ query })]] : []),
     ['Ladybug', () => ladybugVideoDownload({ url: videoUrl })],
     ['Prince', () => princeVideoDownload(videoUrl)],
     localYtdlp,
     ['Hector', () => hectorVideoDownload(videoUrl)],
   ];
-  if (hasCookies()) steps.unshift(steps.splice(2, 1)[0]);
+  if (hasCookies()) steps.unshift(steps.splice(steps.indexOf(localYtdlp), 1)[0]);
   let lastError;
   const failures = [];
   for (const [name, run] of steps) {
@@ -251,7 +270,7 @@ async function toWhatsAppMp4(input, output) {
   const args = ['-y', '-i', input];
   if (!h264) {
     args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-pix_fmt', 'yuv420p');
-    if (info.height > 720) args.push('-vf', 'scale=-2:720');
+    if (info.height > Number(DEFAULT_QUALITY)) args.push('-vf', `scale=-2:${DEFAULT_QUALITY}`);
   } else {
     args.push('-c:v', 'copy');
   }

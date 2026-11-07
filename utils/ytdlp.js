@@ -193,10 +193,10 @@ async function ytdlpAudio(url, { timeoutMs = 180000 } = {}) {
 }
 
 /**
- * Download a YouTube video as MP4 (max 720p, <=64 MB so WhatsApp accepts it).
+ * Download a YouTube video as MP4 (360p by default via config.videoQuality, <=64 MB so WhatsApp accepts it).
  * @returns {{ buffer: Buffer, title: string|null }}
  */
-async function ytdlpVideo(url, { timeoutMs = 240000, maxHeight = 720 } = {}) {
+async function ytdlpVideo(url, { timeoutMs = 240000, maxHeight = Number(require('../config').videoQuality) || 360 } = {}) {
   const bin = await ensureBinary();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdlp-v-'));
   const cookies = getCookiesFile();

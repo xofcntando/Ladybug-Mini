@@ -178,6 +178,17 @@ module.exports = {
         }
       }
       
+      // Info & Jobs Commands (jobs, weather, crypto, wiki, ...)
+      if (categories.info) {
+        menuText += `┏━━━━━━━━━━━━━━━━━\n`;
+        menuText += `┃ 🔎 INFO & JOBS COMMAND\n`;
+        menuText += `┗━━━━━━━━━━━━━━━━━\n`;
+        categories.info.forEach(cmd => {
+          menuText += `│ ➜ ${config.prefix}${cmd.name}\n`;
+        });
+        menuText += `\n`;
+      }
+
       // Utility Commands
       if (categories.utility) {
         menuText += `┏━━━━━━━━━━━━━━━━━\n`;

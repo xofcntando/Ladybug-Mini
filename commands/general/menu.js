@@ -184,12 +184,13 @@ async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
 
   if (sendInteractiveMessage) {
     try {
-      await sendInteractiveMessage(
+      const sent = await sendInteractiveMessage(
         sock,
         extra.from,
         { ...base, interactiveButtons: buttons },
         { quoted: msg }
       );
+      console.log('[menu] interactive sent:', sent?.key?.id || '(no key)', '| status:', sent?.status ?? '(none)');
       return true;
     } catch (e) {
       console.error('[menu] interactive send failed:', e.message);

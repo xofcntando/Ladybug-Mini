@@ -236,7 +236,8 @@ function legendFor(categories, ordered, page = 0) {
 }
 
 
-const DEFAULT_MENU_IMAGE_URL = 'https://raw.githubusercontent.com/xofcntando/Ladybug-Mini/main/utils/bot_image.jpg';
+// No default header URL: the banner is sent as a normal image message in sendHome (reliable on every client).
+const DEFAULT_MENU_IMAGE_URL = '';
 
 function localMenuImage() {
   try {
@@ -290,15 +291,6 @@ async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
     }
   }
 
-  const img = localMenuImage();
-  if (img) {
-    try {
-      await sock.sendMessage(extra.from, { image: img, caption: fallback || text }, { quoted: msg });
-      return false;
-    } catch (e) {
-      console.error('[menu] image send failed:', e.message);
-    }
-  }
   await sock.sendMessage(extra.from, { text: fallback || text }, { quoted: msg });
   return false;
 }
@@ -343,6 +335,18 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
   // Always deliver a plain-text menu first: it renders on every WhatsApp client
   // and numbers can be replied to even when native buttons are ignored.
   menuState.set(String(extra.from), { ordered, page: safePage, at: Date.now() });
+  if (safePage === 0) {
+    const banner = localMenuImage();
+    if (banner) {
+      try {
+        await sock.sendMessage(extra.from, { image: banner, caption: String(config.botName || 'Ladybug Mini') }, { quoted: msg });
+      } catch (e) {
+        console.error('[menu] banner send failed:', e.message);
+      }
+    } else {
+      console.error('[menu] banner image not found at utils/bot_image.jpg');
+    }
+  }
   try {
     await sock.sendMessage(extra.from, { text: legendFor(categories, ordered, safePage) }, { quoted: msg });
   } catch (e) {

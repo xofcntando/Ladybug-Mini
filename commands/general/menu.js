@@ -236,12 +236,25 @@ function legendFor(categories, ordered, page = 0) {
 }
 
 
+const DEFAULT_MENU_IMAGE_URL = 'https://raw.githubusercontent.com/xofcntando/Ladybug-Mini/main/utils/bot_image.jpg';
+
+function localMenuImage() {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const f = path.join(__dirname, '../../utils/bot_image.jpg');
+    return fs.existsSync(f) ? fs.readFileSync(f) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
   const isGroup = String(extra.from || '').endsWith('@g.us');
   // NOTE: never pass a raw image Buffer here. gifted-btns' header resolver expects a
   // URL/object and logs "resolveImageHeader failed" (dropping the header) otherwise.
   // Buttons first; a bare image is not worth risking the whole message.
-  const imageUrl = process.env.MENU_IMAGE_URL || '';
+  const imageUrl = process.env.MENU_IMAGE_URL || DEFAULT_MENU_IMAGE_URL;
   const base = { text, footer: footer(), aimode: !isGroup };
   if (imageUrl) base.image = { url: imageUrl };
 
@@ -277,6 +290,15 @@ async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
     }
   }
 
+  const img = localMenuImage();
+  if (img) {
+    try {
+      await sock.sendMessage(extra.from, { image: img, caption: fallback || text }, { quoted: msg });
+      return false;
+    } catch (e) {
+      console.error('[menu] image send failed:', e.message);
+    }
+  }
   await sock.sendMessage(extra.from, { text: fallback || text }, { quoted: msg });
   return false;
 }

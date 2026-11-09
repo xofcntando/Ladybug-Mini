@@ -123,7 +123,7 @@ module.exports = {
         chatId,
         {
           video: { url: result.dl_url },
-          caption: `🎬 *${result.title || 'Video'}*\n> Powered by Ladybug`,
+          caption: String(result.title || ''),
           mimetype: 'video/mp4',
         },
         { quoted: msg }

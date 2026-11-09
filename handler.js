@@ -689,6 +689,13 @@ const handleMessage = async (sock, msg) => {
         return;
       }
 
+      // Song format picker: song_pick_<audio|document|voice>
+      const songTap = /^song_pick_(audio|document|voice)$/.exec(selectedId);
+      if (songTap) {
+        await runButtonCommand('song', ['__pick', songTap[1]]);
+        return;
+      }
+
       // Menu buttons: menu_all | menu_home | menu_cardigan | menu_cat_<category> | menu_page_<n>
       const menuTap = /^menu_(all|home|cardigan|cat_([a-z0-9_]+)|page_(\d+))$/.exec(selectedId);
       if (menuTap) {

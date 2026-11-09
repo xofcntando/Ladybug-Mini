@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const APIs = require('../../utils/api');
-const { toAudio } = require('../../utils/converter');
+const { toAudio, toPTT } = require('../../utils/converter');
 const { ytdlpAudio } = require('../../utils/ytdlp');
 const config = require('../../config');
 
@@ -314,38 +314,101 @@ function detectAudioFormat(buf) {
   return null;
 }
 
+const pendingPicks = new Map(); // "chat:sender" -> { video, at }
+const PICK_TTL_MS = 10 * 60 * 1000;
+
+async function sendPickButtons(sock, chatId, msg, caption, thumbnail) {
+  const buttons = [
+    { id: 'song_pick_audio', text: '🎵 Audio' },
+    { id: 'song_pick_document', text: '📄 Document' },
+    { id: 'song_pick_voice', text: '🎤 Voice note' },
+  ];
+  const text = `${caption}\n\nHow do you want it?`;
+  try {
+    if (sendInteractiveMessage) {
+      const base = { text, footer: 'Tap an option', interactiveButtons: buttons.map((b) => ({
+        name: 'quick_reply',
+        buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
+      })) };
+      if (thumbnail) base.image = { url: thumbnail };
+      await sendInteractiveMessage(sock, chatId, base, { quoted: msg });
+      return true;
+    }
+    if (sendButtons) {
+      await sendButtons(sock, chatId, { title: '', text, footer: 'Tap an option', buttons }, { quoted: msg });
+      return true;
+    }
+  } catch (e) {
+    console.log('[song] pick buttons failed:', e.message);
+  }
+  return false;
+}
+
 module.exports = {
   name: 'song',
   aliases: ['music', 'yta', 'mp3', 'songdl'],
   category: 'media',
   description: 'Download audio from YouTube',
-  usage: '.song <song name or YouTube link>',
+  usage: '.song <song name or YouTube link>  |  .song doc <name>  |  .song voice <name>',
 
-  async execute(sock, msg, args) {
+  async execute(sock, msg, args, extra = {}) {
     try {
-      const text = args.join(' ').trim();
       const chatId = msg.key.remoteJid;
+      const pickKey = `${chatId}:${extra.sender || msg.key.participant || chatId}`;
+      const MODES = { audio: 'audio', doc: 'document', document: 'document', file: 'document', voice: 'voice', ptt: 'voice', vn: 'voice' };
 
-      if (!text) {
-        return await sock.sendMessage(
-          chatId,
-          { text: 'Usage: .song <song name or YouTube link>' },
-          { quoted: msg }
-        );
-      }
+      let mode = null;
+      let video = null;
+      let rest = [...args];
 
-      // Step 1: Resolve song information
-      const video = await resolveVideoInfo(text);
-      if (!video?.url) {
-        return await sock.sendMessage(chatId, { text: '❌ No results found on YouTube.' }, { quoted: msg });
-      }
-
-      const caption = `🎵 Downloading: *${video.title || 'YouTube Audio'}*\\n⏱ Duration: ${video.timestamp || '—'}`;
-      if (video.thumbnail && /^https?:\/\//i.test(video.thumbnail)) {
-        await sock.sendMessage(chatId, { image: { url: video.thumbnail }, caption }, { quoted: msg });
+      if (rest[0] === '__pick') {
+        // Button tap: .song __pick <audio|document|voice>
+        mode = MODES[String(rest[1] || '').toLowerCase()] || 'audio';
+        const pending = pendingPicks.get(pickKey);
+        if (!pending || Date.now() - pending.at > PICK_TTL_MS) {
+          return await sock.sendMessage(chatId, { text: 'That song request expired. Send .song <name> again.' }, { quoted: msg });
+        }
+        pendingPicks.delete(pickKey);
+        video = pending.video;
       } else {
-        await sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+        if (MODES[String(rest[0] || '').toLowerCase()] && rest.length > 1) {
+          mode = MODES[String(rest.shift()).toLowerCase()];
+        }
+        const text = rest.join(' ').trim();
+
+        if (!text) {
+          return await sock.sendMessage(
+            chatId,
+            { text: 'Usage: .song <song name or YouTube link>\nOptional: .song doc <name> or .song voice <name>' },
+            { quoted: msg }
+          );
+        }
+
+        // Step 1: Resolve song information
+        video = await resolveVideoInfo(text);
+        if (!video?.url) {
+          return await sock.sendMessage(chatId, { text: '❌ No results found on YouTube.' }, { quoted: msg });
+        }
+
+        const caption = `🎵 *${video.title || 'YouTube Audio'}*\n⏱ Duration: ${video.timestamp || '—'}`;
+        const hasThumb = video.thumbnail && /^https?:\/\//i.test(video.thumbnail);
+
+        if (!mode) {
+          // No mode given: let the user choose how to receive it.
+          pendingPicks.set(pickKey, { video, at: Date.now() });
+          const shown = await sendPickButtons(sock, chatId, msg, caption, hasThumb ? video.thumbnail : null);
+          if (shown) return;
+          // Buttons unavailable: fall through and send as normal audio.
+          pendingPicks.delete(pickKey);
+          mode = 'audio';
+        } else if (hasThumb) {
+          await sock.sendMessage(chatId, { image: { url: video.thumbnail }, caption }, { quoted: msg });
+        } else {
+          await sock.sendMessage(chatId, { text: caption }, { quoted: msg });
+        }
       }
+
+      mode = mode || 'audio';
 
       let audioData;
       let audioBuffer;
@@ -444,17 +507,36 @@ module.exports = {
 
       const safeTitle = (audioData?.title || video?.title || 'song').replace(/[^\w\s-]/g, '').trim() || 'song';
 
-      // Send audio message to WhatsApp
-      await sock.sendMessage(
-        chatId,
-        {
-          audio: finalBuffer,
-          mimetype: finalMimetype,
-          fileName: `${safeTitle}.${finalExtension}`,
-          ptt: false,
-        },
-        { quoted: msg }
-      );
+      // Send in the format the user picked
+      if (mode === 'document') {
+        await sock.sendMessage(
+          chatId,
+          { document: finalBuffer, mimetype: finalMimetype, fileName: `${safeTitle}.${finalExtension}` },
+          { quoted: msg }
+        );
+      } else if (mode === 'voice') {
+        let voiceBuffer;
+        try {
+          voiceBuffer = await toPTT(audioBuffer, formatInfo.ext);
+        } catch (e) {
+          console.log('[song] voice conversion failed, sending as audio:', e.message);
+        }
+        if (voiceBuffer?.length) {
+          await sock.sendMessage(chatId, { audio: voiceBuffer, mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
+        } else {
+          await sock.sendMessage(
+            chatId,
+            { audio: finalBuffer, mimetype: finalMimetype, fileName: `${safeTitle}.${finalExtension}`, ptt: false },
+            { quoted: msg }
+          );
+        }
+      } else {
+        await sock.sendMessage(
+          chatId,
+          { audio: finalBuffer, mimetype: finalMimetype, fileName: `${safeTitle}.${finalExtension}`, ptt: false },
+          { quoted: msg }
+        );
+      }
 
       // Clean temp folder asynchronously
       try {

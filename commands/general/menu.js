@@ -230,7 +230,7 @@ function legendFor(categories, ordered, page = 0) {
 
   lines.push(`┗${CARD_WIDTH}`);
   lines.push('');
-  lines.push(`💡 *Reply a number* or tap a section button`);
+  lines.push(`💡 *Reply a number* to open a section`);
   lines.push(brandFooter());
   return lines.join('\n');
 }
@@ -335,17 +335,21 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
   // Always deliver a plain-text menu first: it renders on every WhatsApp client
   // and numbers can be replied to even when native buttons are ignored.
   menuState.set(String(extra.from), { ordered, page: safePage, at: Date.now() });
-  if (safePage === 0) {
-    const banner = localMenuImage();
-    if (banner) {
-      try {
-        await sock.sendMessage(extra.from, { image: banner, caption: String(config.botName || 'Ladybug Mini') }, { quoted: msg });
-      } catch (e) {
-        console.error('[menu] banner send failed:', e.message);
-      }
-    } else {
-      console.error('[menu] banner image not found at utils/bot_image.jpg');
+  // One message: banner image with the numbered menu as its caption.
+  const banner = localMenuImage();
+  if (banner) {
+    try {
+      await sock.sendMessage(
+        extra.from,
+        { image: banner, caption: legendFor(categories, ordered, safePage) },
+        { quoted: msg }
+      );
+      return true;
+    } catch (e) {
+      console.error('[menu] image menu failed, falling back to text + buttons:', e.message);
     }
+  } else {
+    console.error('[menu] banner image not found at utils/bot_image.jpg');
   }
   try {
     await sock.sendMessage(extra.from, { text: legendFor(categories, ordered, safePage) }, { quoted: msg });

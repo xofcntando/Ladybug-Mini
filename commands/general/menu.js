@@ -10,8 +10,6 @@
  * menu still works on WhatsApp builds that do not render native flow messages.
  */
 
-const fs = require('fs');
-const path = require('path');
 const config = require('../../config');
 const { loadCommands } = require('../../utils/commandLoader');
 
@@ -171,32 +169,30 @@ function homeText(categories, ordered, interactive = true) {
   ].join('\n');
 }
 
-function menuImage() {
-  try {
-    const file = path.join(__dirname, '../../utils/bot_image.jpg');
-    return fs.existsSync(file) ? fs.readFileSync(file) : null;
-  } catch {
-    return null;
-  }
-}
-
 function footer() {
   return `${config.botName} • ${config.brand || 'Ntandomods'}`;
 }
 
-async function sendInteractable(sock, msg, extra, { text, buttons, image, fallback }) {
-  const payload = { text, footer: footer() };
-  if (image) payload.image = image;
+async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
+  const isGroup = String(extra.from || '').endsWith('@g.us');
+  // NOTE: never pass a raw image Buffer here. gifted-btns' header resolver expects a
+  // URL/object and logs "resolveImageHeader failed" (dropping the header) otherwise.
+  // Buttons first; a bare image is not worth risking the whole message.
+  const imageUrl = process.env.MENU_IMAGE_URL || '';
+  const base = { text, footer: footer(), aimode: !isGroup };
+  if (imageUrl) base.image = { url: imageUrl };
 
   if (sendInteractiveMessage) {
-    const tries = image ? [payload, { text, footer: footer() }] : [payload];
-    for (const body of tries) {
-      try {
-        await sendInteractiveMessage(sock, extra.from, { ...body, interactiveButtons: buttons }, { quoted: msg });
-        return true;
-      } catch (e) {
-        console.error('[menu] interactive send failed:', e.message);
-      }
+    try {
+      await sendInteractiveMessage(
+        sock,
+        extra.from,
+        { ...base, interactiveButtons: buttons },
+        { quoted: msg }
+      );
+      return true;
+    } catch (e) {
+      console.error('[menu] interactive send failed:', e.message);
     }
   }
 
@@ -209,7 +205,7 @@ async function sendInteractable(sock, msg, extra, { text, buttons, image, fallba
           return { id: p.id, text: p.display_text };
         });
       if (simple.length) {
-        await sendButtons(sock, extra.from, { title: '', text, footer: footer(), buttons: simple }, { quoted: msg });
+        await sendButtons(sock, extra.from, { title: '', text, footer: footer(), aimode: !isGroup, buttons: simple }, { quoted: msg });
         return true;
       }
     } catch (e) {
@@ -261,7 +257,6 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
   return sendInteractable(sock, msg, extra, {
     text: homeText(categories, ordered),
     buttons,
-    image: menuImage(),
     fallback,
   });
 }

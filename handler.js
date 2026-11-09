@@ -642,6 +642,17 @@ const handleMessage = async (sock, msg) => {
     const rawReplyId = extractReplyId(msg.message || content);
     const selectedId = normalizeReplyId(rawReplyId);
 
+    // MENU_DEBUG=1 logs the shape of every non-text message (button/list taps included)
+    // so a client that sends an unexpected payload can be diagnosed from the logs.
+    if (process.env.MENU_DEBUG === '1' && !content?.conversation && !content?.extendedTextMessage?.text) {
+      console.log(
+        '[reply-debug] id:', JSON.stringify(rawReplyId),
+        '| keys:', Object.keys(content || {}).join(','),
+        '| chat:', from,
+        '| fromMe:', msg.key.fromMe
+      );
+    }
+
     if (selectedId) {
       const runButtonCommand = async (commandName, cmdArgs = []) => {
         const command = commands.get(commandName);

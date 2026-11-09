@@ -120,20 +120,46 @@ function fullText(extra, commands, categories, ordered) {
   return text;
 }
 
+// Turn a long command description into one clean line for the card.
+function shortDesc(value, max = 62) {
+  let d = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!d) return '';
+  d = d.split(/\s+[—–]\s+|\s+-\s+/)[0].trim(); // drop the "— extra detail" tail
+  d = d.replace(/[.;,]+$/, '');
+  if (d.length > max) d = `${d.slice(0, max - 1).trimEnd()}…`;
+  return d;
+}
+
+const CARD_WIDTH = '━━━━━━━━━━━━━━━';
+
+function brandFooter() {
+  return `> 🐞 *${config.botName}* • ${config.brand || 'Ntandomods'}`;
+}
+
 function categoryText(key, categories) {
   const list = commandsFor(key, categories);
-  const lines = list.map((c) => {
-    const desc = String(c.description || c.desc || '').replace(/\s+/g, ' ').trim();
-    return desc ? `• *${config.prefix}${c.name}* — ${desc}` : `• *${config.prefix}${c.name}*`;
-  });
-  return [
-    `${label(key)} — *${list.length} command${list.length === 1 ? '' : 's'}*`,
-    '',
-    ...lines,
-    '',
-    `💡 ${config.prefix}menu — back to the menu`,
-    `> 🐞 *${config.botName}* • ${config.brand || 'Ntandomods'}`,
-  ].join('\n');
+  const m = meta(key);
+  const total = list.length;
+  const lines = [];
+
+  lines.push(`╭───「 ${m.emoji} *${String(m.title).toUpperCase()}* 」───╮`);
+  lines.push(`│ 🐞 *${config.botName}*`);
+  lines.push(`│ 📦 *${total}* command${total === 1 ? '' : 's'}   •   ⚡ *${config.prefix}*`);
+  lines.push(`╰${CARD_WIDTH}╯`);
+  lines.push('');
+  lines.push(`┏━ ${m.emoji} *${String(m.title).toUpperCase()} COMMANDS*`);
+  lines.push(`┣${CARD_WIDTH}`);
+
+  for (const c of list) {
+    const d = shortDesc(c.description || c.desc);
+    lines.push(`┃ ⚡ *${config.prefix}${c.name}*${d ? ` — ${d}` : ''}`);
+  }
+
+  lines.push(`┗${CARD_WIDTH}`);
+  lines.push('');
+  lines.push(`💡 *${config.prefix}menu* — main menu   •   *${config.prefix}menu all* — everything`);
+  lines.push(brandFooter());
+  return lines.join('\n');
 }
 
 function rowsFor(ordered, categories, page) {
@@ -182,19 +208,30 @@ function legendFor(categories, ordered, page = 0) {
   const pages = chunk(ordered, PER_PAGE);
   const keys = (pages[page] || []).slice();
   const total = Object.values(categories).reduce((n, list) => n + list.length, 0);
-  const lines = [`🐞 *${config.botName}* — ${total} commands`, `⚡ Prefix: *${config.prefix}*`, ''];
+  const lines = [];
 
-  const cells = keys.map((k, i) => {
+  lines.push(`╭───「 🐞 *${String(config.botName).toUpperCase()}* 」───╮`);
+  lines.push(`│ ⚡ *Prefix:* ${config.prefix}`);
+  lines.push(`│ 📦 *Commands:* ${total}`);
+  lines.push(`│ 🏷️ *Brand:* ${config.brand || 'Ntandomods'}`);
+  lines.push(`╰${CARD_WIDTH}╯`);
+  lines.push('');
+  lines.push(page === 0 ? '📂 *SECTIONS*' : `📂 *SECTIONS*  •  page ${page + 1}/${pages.length}`);
+  lines.push(`┏${CARD_WIDTH}`);
+
+  keys.forEach((k, i) => {
     const count = commandsFor(k, categories).length;
-    return `${i + 1}. ${label(k)} (${count})`;
+    const num = String(i + 1).padStart(2, ' ');
+    lines.push(`┃ ${num}. ${label(k)}  ·  ${count}`);
   });
-  if (page + 1 < pages.length) cells.push(`${cells.length + 1}. ➡️ More`);
-
-  for (let i = 0; i < cells.length; i += 2) {
-    lines.push(cells.slice(i, i + 2).join('   '));
+  if (page + 1 < pages.length) {
+    lines.push(`┃ ${String(keys.length + 1).padStart(2, ' ')}. ➡️ More categories`);
   }
 
-  lines.push('', `Reply with a number, or tap a section button.`);
+  lines.push(`┗${CARD_WIDTH}`);
+  lines.push('');
+  lines.push(`💡 *Reply a number* or tap a section button`);
+  lines.push(brandFooter());
   return lines.join('\n');
 }
 

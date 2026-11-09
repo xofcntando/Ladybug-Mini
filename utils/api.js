@@ -22,7 +22,9 @@ const APIs = {
   // API Key for Ladybug API
   key() {
     const config = require('../config');
-    return String(config.mediaApiKey || config.ladybugApiKey || config.knightApiKey || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=').trim();
+    const k = String(config.mediaApiKey || config.ladybugApiKey || config.knightApiKey || '').trim();
+    if (!k && !APIs._warnedNoKey) { APIs._warnedNoKey = true; console.error('[api] LADYBUG_API_KEY (or YT_API_KEY) is not set - media downloads will be rejected.'); }
+    return k;
   },
 
   // Standard headers with X-API-Key

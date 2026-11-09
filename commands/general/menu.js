@@ -356,10 +356,33 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
   });
 }
 
+const CATEGORY_IMAGES = {
+  media: 'menu-music.jpg',
+  games: 'menu-gamer.jpg',
+  fun: 'menu-gamer.jpg',
+  general: 'menu-flying.jpg',
+};
+
 async function sendCategory(sock, msg, extra, key, categories) {
-  // Plain text only: guaranteed to render (native buttons are not reliable on
-  // linked/personal accounts), and the footer explains how to get back.
+  // Text is the guaranteed path; a themed image is added as the caption carrier when it exists.
   const text = categoryText(key, categories);
+  const file = CATEGORY_IMAGES[String(key).toLowerCase()];
+  if (file) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const f = path.join(__dirname, '../../assets', file);
+      if (fs.existsSync(f)) {
+        if (text.length < 1000) {
+          return await sock.sendMessage(extra.from, { image: fs.readFileSync(f), caption: text }, { quoted: msg });
+        }
+        // Too long for a caption: banner first, full list right after.
+        await sock.sendMessage(extra.from, { image: fs.readFileSync(f) }, { quoted: msg });
+      }
+    } catch (e) {
+      console.error('[menu] category image failed:', e.message);
+    }
+  }
   return sock.sendMessage(extra.from, { text }, { quoted: msg });
 }
 

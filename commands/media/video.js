@@ -11,6 +11,8 @@ const axios = require('axios');
 const APIs = require('../../utils/api');
 const config = require('../../config');
 const { ytdlpVideo } = require('../../utils/ytdlp');
+const guard = require('../../utils/dlGuard');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const YT_API = String(config.mediaApiUrl || config.ladybugApiUrl || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, '');
@@ -50,36 +52,60 @@ async function ladybugVideoDownload({ url, query, quality = DEFAULT_QUALITY }) {
         { path: '/v1/yt/play', params: { query, type: 'video', quality: q } },
       ];
 
+  const cacheKey = `video:${toYouTubeWatchUrl(url || query)}:${q}`;
+  const cached = guard.cacheGet(cacheKey);
+  if (cached) return cached;
+
   let lastErr;
-  for (const r of routes) {
-    try {
-      const { data, status } = await axios.get(`${YT_API}${r.path}`, {
-        params: { ...r.params, apikey: encodeURIComponent(YT_API_KEY) },
-        timeout: 180000,
-        validateStatus: () => true,
-        headers,
-      });
+  let sawBusy = false;
+  for (let round = 0; round < 3; round++) {
+    sawBusy = false;
+    let busyRes = null;
+    for (const r of routes) {
+      try {
+        const res = await axios.get(`${YT_API}${r.path}`, {
+          params: { ...r.params, apikey: encodeURIComponent(YT_API_KEY) },
+          timeout: 180000,
+          validateStatus: () => true,
+          headers,
+        });
+        const { data, status } = res;
 
-      if (status >= 400 || data?.success === false) {
-        continue;
+        if (status === 503) {
+          sawBusy = true;
+          busyRes = res;
+          continue;
+        }
+        if (status >= 400 || data?.success === false) {
+          continue;
+        }
+
+        const file = data?.file || data?.result || data;
+        // Use the link the API returns. file.id is the YouTube video id, NOT the /dl/ file id.
+        const dl_url = pickUrl(file) || pickUrl(data) || (data?.file?.id ? `${YT_API}/dl/${data.file.id}` : null); // /v1/media/* returns {file:{id}} = real file id
+
+        if (dl_url) {
+          const out = {
+            title: file.title || data.title || 'Video',
+            dl_url,
+            sourceUrl: file.url || data.webpage_url || url,
+          };
+          guard.cacheSet(cacheKey, out);
+          return out;
+        }
+      } catch (e) {
+        lastErr = e;
       }
-
-      const file = data?.file || data?.result || data;
-      // Use the link the API returns. file.id is the YouTube video id, NOT the /dl/ file id.
-      const dl_url = pickUrl(file) || pickUrl(data) || (data?.file?.id ? `${YT_API}/dl/${data.file.id}` : null); // /v1/media/* returns {file:{id}} = real file id
-
-      if (dl_url) {
-        return {
-          title: file.title || data.title || 'Video',
-          dl_url,
-          sourceUrl: file.url || data.webpage_url || url,
-        };
-      }
-    } catch (e) {
-      lastErr = e;
     }
+    if (!sawBusy) break;
+    if (round < 2) await sleep(guard.retryDelayMs(busyRes));
   }
 
+  if (sawBusy) {
+    const e = new Error('busy');
+    e.busy = true;
+    throw e;
+  }
   throw lastErr || new Error('Ladybug API video download failed');
 }
 
@@ -91,6 +117,19 @@ module.exports = {
   usage: '.video <song name or YouTube link>',
 
   async execute(sock, msg, args) {
+    const chatId = msg.key.remoteJid;
+    const lockKey = `video:${chatId}:${msg.key.participant || chatId}`;
+    if (!guard.acquire(lockKey)) {
+      return sock.sendMessage(chatId, { text: '⏳ You already have a download running. Please wait for it to finish.' }, { quoted: msg });
+    }
+    try {
+      return await this.run(sock, msg, args);
+    } finally {
+      guard.release(lockKey);
+    }
+  },
+
+  async run(sock, msg, args) {
     try {
       const text = args.join(' ').trim();
       const chatId = msg.key.remoteJid;
@@ -112,7 +151,12 @@ module.exports = {
           query: text,
         });
       } catch (err) {
-        result = await APIs.getEliteProTechVideoByUrl(text);
+        try {
+          result = await APIs.getEliteProTechVideoByUrl(text);
+        } catch (e2) {
+          if (err.busy) throw err;
+          throw e2;
+        }
       }
 
       if (!result?.dl_url) {
@@ -132,7 +176,7 @@ module.exports = {
       console.error('Video command error:', err);
       await sock.sendMessage(
         msg.key.remoteJid,
-        { text: `❌ Failed to download video: ${err.message || 'Error'}` },
+        { text: err.busy ? guard.BUSY_MESSAGE : `❌ Failed to download video: ${err.message || 'Error'}` },
         { quoted: msg }
       );
     }

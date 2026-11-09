@@ -12,6 +12,7 @@ const APIs = require('../../utils/api');
 const { toAudio, toPTT } = require('../../utils/converter');
 const { ytdlpAudio } = require('../../utils/ytdlp');
 const config = require('../../config');
+const guard = require('../../utils/dlGuard');
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -137,8 +138,13 @@ async function resolveVideoInfo(text) {
  * Primary Downloader: Ladybug API (Supports /api/ytmp3, /api/download/ytaudio, /v1/media/ytmp3)
  * CRITICAL FIX: Sends 'X-API-Key' in headers so '+' in base64 key is NEVER decoded into spaces!
  */
-async function ladybugSongDownload(url, title = '', attempts = 2) {
+async function ladybugSongDownload(url, title = '', attempts = 3) {
   let lastError;
+  let sawBusy = false;
+  let busyRes = null;
+  const cacheKey = `audio:${toYouTubeWatchUrl(url)}`;
+  const cached = guard.cacheGet(cacheKey);
+  if (cached) return cached;
   const headers = {
     'X-API-Key': YT_API_KEY,
     'User-Agent': UA,
@@ -168,15 +174,25 @@ async function ladybugSongDownload(url, title = '', attempts = 2) {
   ];
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    sawBusy = false;
     for (const ep of endpoints) {
       try {
         console.log(`[song] Requesting Ladybug endpoint ${ep.path} (attempt ${attempt})...`);
-        const { data, status } = await axios.get(`${YT_API}${ep.path}`, {
+        const res = await axios.get(`${YT_API}${ep.path}`, {
           params: { ...ep.params, apikey: encodeURIComponent(YT_API_KEY) },
           timeout: 120000,
           validateStatus: () => true,
           headers,
         });
+        const { data, status } = res;
+
+        if (status === 503) {
+          sawBusy = true;
+          busyRes = res;
+          console.log(`[song] ${ep.path} queue busy (503)`);
+          break; // same server queue for every endpoint: wait and retry instead
+
+        }
 
         if (status >= 400 || (data && data.success === false)) {
           const msg = data?.detail || data?.error || data?.message || `HTTP ${status}`;
@@ -188,18 +204,25 @@ async function ladybugSongDownload(url, title = '', attempts = 2) {
         const download = pickUrl(extracted) || pickUrl(data);
         if (download) {
           console.log(`[song] Successfully received download URL from ${ep.path}`);
-          return {
+          const out = {
             download,
             title: extracted?.title || data?.title || title,
             thumbnail: extracted?.thumbnail || data?.thumbnail || null,
           };
+          guard.cacheSet(cacheKey, out);
+          return out;
         }
       } catch (err) {
         lastError = err;
         console.log(`[song] ${ep.path} attempt error:`, err.message);
       }
     }
-    if (attempt < attempts) await sleep(1200 * attempt);
+    if (attempt < attempts) await sleep(sawBusy ? guard.retryDelayMs(busyRes) : 1200 * attempt);
+  }
+  if (sawBusy) {
+    const e = new Error('busy');
+    e.busy = true;
+    throw e;
   }
   throw lastError || new Error('Ladybug API audio endpoints failed');
 }
@@ -314,6 +337,26 @@ function detectAudioFormat(buf) {
   return null;
 }
 
+async function sendSuggestions(sock, chatId, msg, video) {
+  try {
+    const title = String(video?.title || '').trim();
+    if (!title || /^YouTube Audio$/i.test(title)) return;
+    const search = await Promise.race([
+      yts(title),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+    ]);
+    const currentId = extractYouTubeId(video.url || '') || video.videoId;
+    const picks = (search?.videos || [])
+      .filter((v) => v.videoId !== currentId && v.title && v.title !== title)
+      .slice(0, 3);
+    if (!picks.length) return;
+    const lines = picks.map((v, i) => `${i + 1}. ${v.title}${v.timestamp ? ` (${v.timestamp})` : ''}\n   .song ${v.title.slice(0, 60)}`);
+    await sock.sendMessage(chatId, { text: `More like this:\n${lines.join('\n')}\n\nPowered by Ladybug` }, { quoted: msg });
+  } catch (e) {
+    console.log('[song] suggestions skipped:', e.message);
+  }
+}
+
 const pendingPicks = new Map(); // "chat:sender" -> { video, at }
 const PICK_TTL_MS = 10 * 60 * 1000;
 
@@ -352,6 +395,19 @@ module.exports = {
   usage: '.song <song name or YouTube link>  |  .song doc <name>  |  .song voice <name>',
 
   async execute(sock, msg, args, extra = {}) {
+    const chatId = msg.key.remoteJid;
+    const lockKey = `song:${chatId}:${extra.sender || msg.key.participant || chatId}`;
+    if (!guard.acquire(lockKey)) {
+      return sock.sendMessage(chatId, { text: '⏳ You already have a download running. Please wait for it to finish.' }, { quoted: msg });
+    }
+    try {
+      return await this.run(sock, msg, args, extra);
+    } finally {
+      guard.release(lockKey);
+    }
+  },
+
+  async run(sock, msg, args, extra = {}) {
     try {
       const chatId = msg.key.remoteJid;
       const pickKey = `${chatId}:${extra.sender || msg.key.participant || chatId}`;
@@ -423,7 +479,9 @@ module.exports = {
         { name: 'Hector API', method: () => hectorSongDownload(video.url) },
       ];
 
+      let serverBusy = false;
       for (const apiMethod of apiMethods) {
+        if (serverBusy && apiMethod.name.includes('(Ladybug)')) continue; // same busy server
         try {
           audioData = await apiMethod.method();
           const audioUrl = pickUrl(audioData);
@@ -463,6 +521,7 @@ module.exports = {
             continue;
           }
         } catch (apiErr) {
+          if (apiErr.busy) serverBusy = true;
           console.log(`${apiMethod.name} API error:`, apiErr.message);
           continue;
         }
@@ -483,7 +542,9 @@ module.exports = {
       }
 
       if (!downloadSuccess || !audioBuffer) {
-        throw new Error('All download sources failed. Please check connection to Ladybug API.');
+        const e = new Error(serverBusy ? 'busy' : 'All download sources failed. Please check connection to Ladybug API.');
+        e.busy = serverBusy;
+        throw e;
       }
 
       const formatInfo = detectAudioFormat(audioBuffer) || { name: 'MP3', ext: 'mp3' };
@@ -538,6 +599,8 @@ module.exports = {
         );
       }
 
+      sendSuggestions(sock, chatId, msg, video); // fire and forget
+
       // Clean temp folder asynchronously
       try {
         const tempDir = path.join(__dirname, '../../temp');
@@ -559,7 +622,7 @@ module.exports = {
       console.error('Song command error:', err);
       await sock.sendMessage(
         msg.key.remoteJid,
-        { text: `❌ Failed to download song: ${err.message || 'Unknown error'}` },
+        { text: err.busy ? guard.BUSY_MESSAGE : `❌ Failed to download song: ${err.message || 'Unknown error'}` },
         { quoted: msg }
       );
     }

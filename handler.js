@@ -1040,8 +1040,22 @@ const handleMessage = async (sock, msg) => {
       }
     }
 
-    // Check if message starts with prefix
-    if (!body.startsWith(config.prefix)) return;
+    // Numbered menu navigation — works even when native buttons are not rendered
+    if (!body.startsWith(config.prefix)) {
+      const menuCmd = commands.get('menu');
+      if (menuCmd?.handleMenuNumber) {
+        const handled = await menuCmd.handleMenuNumber(sock, msg, body, {
+          from,
+          sender,
+          isGroup,
+          groupMetadata,
+          isOwner: isOwner(sender),
+          reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
+        });
+        if (handled) return;
+      }
+      return;
+    }
     
     // Parse command
     const args = body.slice(config.prefix.length).trim().split(/\s+/);

@@ -140,11 +140,11 @@ When the bot starts:
 
 > Type `.menu` in WhatsApp to see the complete, live command list.
 >
-> `.menu` is a **button menu**: tap a quick reply or open the *Browse Categories*
-> picker, then tap any category to see its commands. Prefer typing?
-> `.menu <category>` opens one section, `.menu all` lists everything, and
-> `.menu page <n>` opens a later page of categories. If a WhatsApp build does not
-> render native buttons, the menu falls back to plain text automatically.
+> `.menu` sends a **numbered section list plus buttons**. Reply with a number
+> (1-8, or 9 for more), tap a button, or type `.menu <category>` to open one
+> section. `.menu all` lists everything and `.menu page <n>` opens a later page
+> of categories. The numbered text is always delivered, so the menu still works
+> on WhatsApp builds that ignore native buttons.
 
 ### 🤖 Auto-respond AI
 

@@ -173,6 +173,32 @@ function footer() {
   return `${config.botName} • ${config.brand || 'Ntandomods'}`;
 }
 
+// chatId -> { ordered, page, at }. Lets users reply with a number when their client
+// does not render native-flow buttons (common on linked/personal WhatsApp accounts).
+const menuState = new Map();
+const MENU_STATE_TTL = 10 * 60 * 1000;
+
+function legendFor(categories, ordered, page = 0) {
+  const pages = chunk(ordered, PER_PAGE);
+  const keys = (pages[page] || []).slice();
+  const total = Object.values(categories).reduce((n, list) => n + list.length, 0);
+  const lines = [`🐞 *${config.botName}* — ${total} commands`, `⚡ Prefix: *${config.prefix}*`, ''];
+
+  const cells = keys.map((k, i) => {
+    const count = commandsFor(k, categories).length;
+    return `${i + 1}. ${label(k)} (${count})`;
+  });
+  if (page + 1 < pages.length) cells.push(`${cells.length + 1}. ➡️ More`);
+
+  for (let i = 0; i < cells.length; i += 2) {
+    lines.push(cells.slice(i, i + 2).join('   '));
+  }
+
+  lines.push('', `Reply with a number, or tap a section button.`);
+  return lines.join('\n');
+}
+
+
 async function sendInteractable(sock, msg, extra, { text, buttons, fallback }) {
   const isGroup = String(extra.from || '').endsWith('@g.us');
   // NOTE: never pass a raw image Buffer here. gifted-btns' header resolver expects a
@@ -255,6 +281,15 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
     `Type ${config.prefix}menu all for the full list.`,
   ].join('\n');
 
+  // Always deliver a plain-text menu first: it renders on every WhatsApp client
+  // and numbers can be replied to even when native buttons are ignored.
+  menuState.set(String(extra.from), { ordered, page: safePage, at: Date.now() });
+  try {
+    await sock.sendMessage(extra.from, { text: legendFor(categories, ordered, safePage) }, { quoted: msg });
+  } catch (e) {
+    console.error('[menu] legend send failed:', e.message);
+  }
+
   return sendInteractable(sock, msg, extra, {
     text: homeText(categories, ordered),
     buttons,
@@ -277,12 +312,50 @@ async function sendCategory(sock, msg, extra, key, categories) {
   return sendInteractable(sock, msg, extra, { text, buttons, fallback: text });
 }
 
+/**
+ * Reply-with-a-number navigation. Returns true when the message was a menu selection.
+ * Only active for 10 minutes after a menu was opened in that chat.
+ */
+async function handleMenuNumber(sock, msg, text, extra) {
+  const chatId = String(extra.from || msg.key?.remoteJid || '');
+  const st = menuState.get(chatId);
+  if (!st) return false;
+  if (Date.now() - st.at > MENU_STATE_TTL) {
+    menuState.delete(chatId);
+    return false;
+  }
+
+  const raw = String(text || '').trim();
+  if (!/^\d{1,2}$/.test(raw)) return false;
+
+  const n = parseInt(raw, 10);
+  const pages = chunk(st.ordered, PER_PAGE);
+  const pageKeys = pages[st.page] || [];
+  const moreIndex = pageKeys.length + 1;
+
+  if (n >= 1 && n <= pageKeys.length) {
+    menuState.delete(chatId);
+    const { categories } = collect();
+    await sendCategory(sock, msg, extra, pageKeys[n - 1], categories);
+    return true;
+  }
+  if (st.page + 1 < pages.length && n === moreIndex) {
+    const { categories } = collect();
+    await sendHome(sock, msg, extra, categories, st.ordered, st.page + 1);
+    return true;
+  }
+  // A number outside the menu: leave it for normal processing.
+  return false;
+}
+
 module.exports = {
   name: 'menu',
   aliases: ['help', 'commands'],
   category: 'general',
   description: 'Show all commands with buttons',
   usage: '.menu [all|category]',
+
+  handleMenuNumber,
 
   async execute(sock, msg, args, extra) {
     try {

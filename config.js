@@ -82,8 +82,8 @@ module.exports = {
     ladybugApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
     ladybugApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     // Backward-compatible aliases (older modules may still read these keys)
-    knightApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
-    knightApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
+    ladybugApiUrl: (process.env.LADYBUG_API_URL || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, ''),
+    ladybugApiKey: process.env.LADYBUG_API_KEY || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=',
     princeApiUrl: (process.env.PRINCE_API_URL || 'https://api.princetechn.com').replace(/\/$/, ''),
     princeApiKey: process.env.PRINCE_API_KEY || 'prince',
 

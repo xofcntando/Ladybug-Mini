@@ -19,6 +19,7 @@ const APIs = require('./utils/api');
 const { resolveJoinLeaveTarget, toMention } = require('./utils/funHelpers');
 const { rememberFromMessage, rememberContact } = require('./utils/nameCache');
 const groupStatusTracker = require('./utils/groupStatusTracker');
+const { extractReplyId, normalizeReplyId } = require('./utils/replyId');
 
 // Group metadata cache to prevent rate limiting
 const groupMetadataCache = new Map();
@@ -638,11 +639,8 @@ const handleMessage = async (sock, msg) => {
     if (!content || actualMessageTypes.length === 0) return;
     
     // 🔹 Button / list responses — route the tap to a command
-    const btn = content.buttonsResponseMessage || msg.message?.buttonsResponseMessage;
-    const listRow =
-      content.listResponseMessage?.singleSelectReply?.selectedRowId ||
-      msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
-    const selectedId = String(btn?.selectedButtonId || listRow || '');
+    const rawReplyId = extractReplyId(msg.message || content);
+    const selectedId = normalizeReplyId(rawReplyId);
 
     if (selectedId) {
       const runButtonCommand = async (commandName, cmdArgs = []) => {
@@ -680,15 +678,33 @@ const handleMessage = async (sock, msg) => {
         return;
       }
 
-      // Menu buttons: menu_all | menu_home | menu_cat_<category> | menu_page_<n>
-      const menuTap = /^menu_(all|home|cat_([a-z0-9_]+)|page_(\d+))$/.exec(selectedId);
+      // Menu buttons: menu_all | menu_home | menu_cardigan | menu_cat_<category> | menu_page_<n>
+      const menuTap = /^menu_(all|home|cardigan|cat_([a-z0-9_]+)|page_(\d+))$/.exec(selectedId);
       if (menuTap) {
-        const menuArgs = menuTap[2]
-          ? [menuTap[2]]
-          : menuTap[3] !== undefined
-            ? ['page', menuTap[3]]
-            : [menuTap[1]];
-        await runButtonCommand('menu', menuArgs);
+        if (process.env.MENU_DEBUG === '1') console.log('[reply] menu tap:', selectedId, '| raw:', rawReplyId);
+        const handled = menuTap[1] === 'cardigan'
+          ? await runButtonCommand('cardigan')
+          : await runButtonCommand('menu', menuTap[2]
+              ? [menuTap[2]]
+              : menuTap[3] !== undefined
+                ? ['page', menuTap[3]]
+                : [menuTap[1]]);
+        if (!handled) {
+          await sock.sendMessage(from, {
+            text: `⚠️ Command not loaded (${menuTap[1] === 'cardigan' ? 'cardigan' : 'menu'}).`,
+          }, { quoted: msg });
+        }
+        return;
+      }
+
+      // A menu tap we do not recognise: log the shape once so it can be fixed,
+      // and never leave the user with silence on a menu_ id.
+      if (/^(menu_|btn_)/.test(selectedId)) {
+        console.log('[reply] unhandled id:', selectedId, '| raw:', rawReplyId,
+          '| types:', Object.keys(content || {}).join(','));
+        await sock.sendMessage(from, {
+          text: `⚠️ This button isn't wired up yet (${selectedId}).\nType ${config.prefix}menu to open the menu.`,
+        }, { quoted: msg });
         return;
       }
     }

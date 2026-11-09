@@ -298,18 +298,10 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
 }
 
 async function sendCategory(sock, msg, extra, key, categories) {
+  // Plain text only: guaranteed to render (native buttons are not reliable on
+  // linked/personal accounts), and the footer explains how to get back.
   const text = categoryText(key, categories);
-  const buttons = [
-    {
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({ display_text: '⬅️ Back to Menu', id: 'menu_home' }),
-    },
-    {
-      name: 'quick_reply',
-      buttonParamsJson: JSON.stringify({ display_text: '📋 All Commands', id: 'menu_all' }),
-    },
-  ];
-  return sendInteractable(sock, msg, extra, { text, buttons, fallback: text });
+  return sock.sendMessage(extra.from, { text }, { quoted: msg });
 }
 
 /**

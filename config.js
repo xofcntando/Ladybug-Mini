@@ -14,7 +14,7 @@ module.exports = {
     prefix: '.',
     sessionName: 'session',
     sessionID: process.env.SESSION_ID || '', //Paste your session here
-    newsletterJid: '120363161513685998@newsletter', // Newsletter JID for menu forwarding
+    newsletterJid: '120363413478700971@newsletter', // Newsletter JID for menu forwarding
     updateZipUrl: 'https://github.com/kids-codentando/Ladybug-Mini/archive/refs/heads/main.zip', // URL to latest code zip for .update command
 
         // Sticker Configuration

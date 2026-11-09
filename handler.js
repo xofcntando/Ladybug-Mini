@@ -637,66 +637,54 @@ const handleMessage = async (sock, msg) => {
     // Return early for non-group messages with no recognizable content
     if (!content || actualMessageTypes.length === 0) return;
     
-    // 🔹 Button response should also check unwrapped content
+    // 🔹 Button / list responses — route the tap to a command
     const btn = content.buttonsResponseMessage || msg.message?.buttonsResponseMessage;
-    if (btn) {
-      const buttonId = btn.selectedButtonId;
-      const displayText = btn.selectedDisplayText;
-      
-      // Handle button clicks by routing to commands
-      if (buttonId === 'btn_menu') {
-        // Execute menu command
-        const menuCmd = commands.get('menu');
-        if (menuCmd) {
-          await menuCmd.execute(sock, msg, [], {
-            from,
-            sender,
-            isGroup,
-            groupMetadata,
-            isOwner: isOwner(sender),
-            isAdmin: await isAdmin(sock, sender, from, groupMetadata),
-            isBotAdmin: await isBotAdmin(sock, from, groupMetadata),
-            isMod: isMod(sender),
-            reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
-            react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
-          });
-        }
+    const listRow =
+      content.listResponseMessage?.singleSelectReply?.selectedRowId ||
+      msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
+    const selectedId = String(btn?.selectedButtonId || listRow || '');
+
+    if (selectedId) {
+      const runButtonCommand = async (commandName, cmdArgs = []) => {
+        const command = commands.get(commandName);
+        if (!command) return false;
+        await command.execute(sock, msg, cmdArgs, {
+          from,
+          sender,
+          isGroup,
+          groupMetadata,
+          isOwner: isOwner(sender),
+          isAdmin: await isAdmin(sock, sender, from, groupMetadata),
+          isBotAdmin: await isBotAdmin(sock, from, groupMetadata),
+          isMod: isMod(sender),
+          reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
+          react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
+        });
+        return true;
+      };
+
+      if (selectedId === 'btn_menu') {
+        await runButtonCommand('menu');
         return;
-      } else if (buttonId === 'btn_ping') {
-        // Execute ping command
-        const pingCmd = commands.get('ping');
-        if (pingCmd) {
-          await pingCmd.execute(sock, msg, [], {
-            from,
-            sender,
-            isGroup,
-            groupMetadata,
-            isOwner: isOwner(sender),
-            isAdmin: await isAdmin(sock, sender, from, groupMetadata),
-            isBotAdmin: await isBotAdmin(sock, from, groupMetadata),
-            isMod: isMod(sender),
-            reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
-            react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
-          });
-        }
+      }
+      if (selectedId === 'btn_ping') {
+        await runButtonCommand('ping');
         return;
-      } else if (buttonId === 'btn_help') {
-        // Execute list command again (help)
-        const listCmd = commands.get('list');
-        if (listCmd) {
-          await listCmd.execute(sock, msg, [], {
-            from,
-            sender,
-            isGroup,
-            groupMetadata,
-            isOwner: isOwner(sender),
-            isAdmin: await isAdmin(sock, sender, from, groupMetadata),
-            isBotAdmin: await isBotAdmin(sock, from, groupMetadata),
-            isMod: isMod(sender),
-            reply: (text) => sock.sendMessage(from, { text }, { quoted: msg }),
-            react: (emoji) => sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
-          });
-        }
+      }
+      if (selectedId === 'btn_help') {
+        await runButtonCommand('list');
+        return;
+      }
+
+      // Menu buttons: menu_all | menu_home | menu_cat_<category> | menu_page_<n>
+      const menuTap = /^menu_(all|home|cat_([a-z0-9_]+)|page_(\d+))$/.exec(selectedId);
+      if (menuTap) {
+        const menuArgs = menuTap[2]
+          ? [menuTap[2]]
+          : menuTap[3] !== undefined
+            ? ['page', menuTap[3]]
+            : [menuTap[1]];
+        await runButtonCommand('menu', menuArgs);
         return;
       }
     }

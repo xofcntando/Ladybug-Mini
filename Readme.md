@@ -125,7 +125,7 @@ When the bot starts:
 
 | Category | Example Commands |
 |----------|------------------|
-| General | `.menu` `.ladybug` `.ping` `.uptime` `.owner` `.sticker` |
+| General | `.menu` (buttons) `.ladybug` `.ping` `.uptime` `.owner` `.sticker` |
 | Ladybug | `.sysinfo` `.speed` `.bug` `.spots` `.wings` `.crawl` `.swarm` `.garden` |
 | AI | `.ai` `.chatbot` `.magicstudio` |
 | Media | `.song` `.video` `.tiktok` `.instagram` `.facebook` `.twitter` |
@@ -139,6 +139,12 @@ When the bot starts:
 | Crush 💘 | `.crush` `.crushscan` `.crushmeter` `.crushmenu` |
 
 > Type `.menu` in WhatsApp to see the complete, live command list.
+>
+> `.menu` is a **button menu**: tap a quick reply or open the *Browse Categories*
+> picker, then tap any category to see its commands. Prefer typing?
+> `.menu <category>` opens one section, `.menu all` lists everything, and
+> `.menu page <n>` opens a later page of categories. If a WhatsApp build does not
+> render native buttons, the menu falls back to plain text automatically.
 
 ### 🤖 Auto-respond AI
 

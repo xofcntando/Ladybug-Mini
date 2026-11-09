@@ -14,7 +14,7 @@ const { ytdlpVideo } = require('../../utils/ytdlp');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const YT_API = String(config.mediaApiUrl || config.ladybugApiUrl || 'https://ladybug-api-e8q8.onrender.com').replace(/\/$/, '');
-const YT_API_KEY = config.mediaApiKey || config.ladybugApiKey;
+const YT_API_KEY = config.mediaApiKey || config.ladybugApiKey || 'nzN64y+bq1bd/QwnMLOxxQDgG5AL78ul82qg4tPI1lk=';
 const DEFAULT_QUALITY = String(config.videoQuality || '360');
 
 function pickUrl(result) {

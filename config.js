@@ -58,6 +58,7 @@ module.exports = {
           antidelete: false,
           detect: false,
           chatbot: false,
+          chatbotAuto: false, // Reply to every text message (not just mentions)
           suppress: false, // Members get no command reply; owner and admins still can
           autosticker: false // Auto-convert images/videos to stickers
         },

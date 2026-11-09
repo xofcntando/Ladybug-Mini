@@ -986,10 +986,10 @@ const handleMessage = async (sock, msg) => {
       }
     }
 
-    // Chatbot — respond when bot is @mentioned or user replies to bot
-    if (!msg.key.fromMe && isGroup) {
+    // Chatbot — mention/reply mode, plus optional auto-respond mode
+    if (!msg.key.fromMe && isGroup && body) {
       const groupSettings = database.getGroupSettings(from);
-      if (groupSettings.chatbot) {
+      if (groupSettings.chatbot || groupSettings.chatbotAuto) {
         const ctx = content?.extendedTextMessage?.contextInfo
           || content?.imageMessage?.contextInfo
           || content?.videoMessage?.contextInfo
@@ -998,12 +998,24 @@ const handleMessage = async (sock, msg) => {
         const isMentioned = mentionedJids.some(jid => isBotJid(jid, sock));
         const isReplyToBot = ctx?.participant && isBotJid(ctx.participant, sock);
 
-        if ((isMentioned || isReplyToBot) && !body.startsWith(config.prefix)) {
+        // Auto-respond must never eat a command: skip anything that looks like one.
+        const commandLike = body.startsWith(config.prefix) || /^[.\/!#,;:$%&*~^]/.test(body.trim());
+
+        if ((isMentioned || isReplyToBot) && !commandLike) {
           if (groupSettings.suppress) {
             const staff = isOwner(sender) || await isAdmin(sock, sender, from, groupMetadata);
             if (!staff) return;
           }
           await chatbotCmd.handleChat(sock, msg, body, sender);
+          return;
+        }
+
+        if (groupSettings.chatbotAuto && !commandLike) {
+          if (groupSettings.suppress) {
+            const staff = isOwner(sender) || await isAdmin(sock, sender, from, groupMetadata);
+            if (!staff) return;
+          }
+          await chatbotCmd.handleAutoReply(sock, msg, body, sender);
           return;
         }
       }

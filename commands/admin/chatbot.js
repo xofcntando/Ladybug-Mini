@@ -140,6 +140,30 @@ function stripBotMention(text, sock) {
 
 const MENTION_ONLY_FALLBACK = 'Kya re Lavde Kyu tag kar rha h baar baar?';
 
+// --- Auto-respond mode -----------------------------------------------------
+// Replies to every text message in the group instead of waiting for a mention.
+// A per-chat cooldown keeps a busy group from flooding the AI provider (the keyless
+// tier allows only one request every 45s, so we never fire more than one at a time).
+const AUTO_COOLDOWN_MS = Math.max(1500, parseInt(process.env.CHATBOT_AUTO_COOLDOWN_MS || '5000', 10) || 5000);
+const autoCooldown = new Map(); // chatId -> timestamp of the last auto reply
+const autoPending = new Set();  // chatId -> an auto reply is already in flight
+
+// Anything that looks like a command for any bot: . / ! # , ; : $ % & * ~ ^
+const COMMAND_LIKE_RE = /^[\s.\/!#,;:$%&*~^]/;
+
+function autoReplyAllowed(chatId) {
+  if (autoPending.has(chatId)) return false;
+  const last = autoCooldown.get(chatId) || 0;
+  return Date.now() - last >= AUTO_COOLDOWN_MS;
+}
+
+// Keep the in-memory maps from growing across a long uptime.
+function pruneAutoState() {
+  if (autoCooldown.size < 500) return;
+  const cutoff = Date.now() - AUTO_COOLDOWN_MS * 4;
+  for (const [chatId, ts] of autoCooldown) if (ts < cutoff) autoCooldown.delete(chatId);
+}
+
 const REFUSAL_RE = /sorry|can'?t (help|assist|provide)|cannot (help|assist|provide)|against (my|our) (guidelines|policy)|abusive or offensive|i am unable|as an ai/i;
 
 function isBadReply(text) {
@@ -183,40 +207,47 @@ async function getAIResponse(userMessage, userContext) {
   return cleanResponse(reply, userMessage);
 }
 
+/** Store the incoming text and return the rolling history/context for this sender. */
+function rememberMessage(senderId, cleanedMessage) {
+  if (!chatMemory.messages.has(senderId)) {
+    chatMemory.messages.set(senderId, []);
+    chatMemory.userInfo.set(senderId, {});
+  }
+
+  const userInfo = extractUserInfo(cleanedMessage);
+  if (Object.keys(userInfo).length > 0) {
+    chatMemory.userInfo.set(senderId, {
+      ...chatMemory.userInfo.get(senderId),
+      ...userInfo
+    });
+  }
+
+  const messages = chatMemory.messages.get(senderId);
+  messages.push(cleanedMessage);
+  if (messages.length > MAX_MESSAGES) messages.shift();
+
+  return {
+    messages: chatMemory.messages.get(senderId),
+    userInfo: chatMemory.userInfo.get(senderId)
+  };
+}
+
 async function handleChat(sock, msg, text, senderId) {
   const chatId = msg.key.remoteJid;
   const cleanedMessage = stripBotMention(text, sock);
   const mentionOnly = !cleanedMessage;
 
   try {
-    if (!chatMemory.messages.has(senderId)) {
-      chatMemory.messages.set(senderId, []);
-      chatMemory.userInfo.set(senderId, {});
-    }
-
     if (mentionOnly) {
       await showTyping(sock, chatId, getTypingDelay(MENTION_ONLY_FALLBACK.length));
       return sock.sendMessage(chatId, { text: MENTION_ONLY_FALLBACK }, { quoted: msg });
     }
 
-    const userInfo = extractUserInfo(cleanedMessage);
-    if (Object.keys(userInfo).length > 0) {
-      chatMemory.userInfo.set(senderId, {
-        ...chatMemory.userInfo.get(senderId),
-        ...userInfo
-      });
-    }
-
-    const messages = chatMemory.messages.get(senderId);
-    messages.push(cleanedMessage);
-    if (messages.length > MAX_MESSAGES) messages.shift();
+    const context = rememberMessage(senderId, cleanedMessage);
 
     await sock.sendPresenceUpdate('composing', chatId);
 
-    const response = await getAIResponse(cleanedMessage, {
-      messages: chatMemory.messages.get(senderId),
-      userInfo: chatMemory.userInfo.get(senderId)
-    });
+    const response = await getAIResponse(cleanedMessage, context);
 
     await showTyping(sock, chatId, getTypingDelay(response.length));
     await sock.sendMessage(chatId, { text: response }, { quoted: msg });
@@ -230,27 +261,71 @@ async function handleChat(sock, msg, text, senderId) {
   }
 }
 
+/**
+ * Auto-respond mode: reply to every text message in the group (no mention needed).
+ * Failures are silent on purpose — an offline AI provider must not spam the group.
+ * @returns {Promise<boolean>} true when a reply was sent
+ */
+async function handleAutoReply(sock, msg, text, senderId) {
+  const chatId = msg.key.remoteJid;
+  const cleanedMessage = stripBotMention(text, sock);
+
+  if (!cleanedMessage || cleanedMessage.length < 2) return false;
+  if (COMMAND_LIKE_RE.test(cleanedMessage)) return false;
+  if (!autoReplyAllowed(chatId)) return false;
+
+  autoPending.add(chatId);
+  autoCooldown.set(chatId, Date.now());
+  pruneAutoState();
+
+  try {
+    const context = rememberMessage(senderId, cleanedMessage);
+
+    await sock.sendPresenceUpdate('composing', chatId);
+
+    const response = await getAIResponse(cleanedMessage, context);
+    if (!response) return false;
+
+    await showTyping(sock, chatId, getTypingDelay(response.length));
+    await sock.sendMessage(chatId, { text: response }, { quoted: msg });
+    return true;
+  } catch (error) {
+    console.error('[chatbot-auto] error:', error.message, error.response?.data || '');
+    return false;
+  } finally {
+    autoPending.delete(chatId);
+  }
+}
+
 module.exports = {
   name: 'chatbot',
   aliases: ['cb'],
   category: 'admin',
-  description: 'AI chatbot — tag bot or reply to chat',
-  usage: '.chatbot [on|off]',
+  description: 'AI chatbot — tag bot, reply to it, or auto-respond to every message',
+  usage: '.chatbot [on|mention|auto|off]',
   groupOnly: true,
   adminOnly: true,
   botAdminNeeded: true,
 
   handleChat,
+  handleAutoReply,
 
   async execute(sock, msg, args, extra) {
     const match = (args[0] || '').toLowerCase().trim();
     const chatId = extra.from;
 
-    if (!match) {
-      const enabled = database.getGroupSettings(chatId).chatbot;
+    if (!match || match === 'status') {
+      const settings = database.getGroupSettings(chatId);
+      const auto = !!settings.chatbotAuto;
+      const mention = !!settings.chatbot;
+      const status = auto ? '🟢 Auto — every message' : mention ? '🟡 Mention only' : '❌ Off';
       await showTyping(sock, chatId);
       return extra.reply(
-        `*CHATBOT SETUP*\n\nStatus: ${enabled ? '✅ On' : '❌ Off'}\n\n*.chatbot on* — Enable chatbot\n*.chatbot off* — Disable chatbot\n\n@tag bot or reply to chat!`
+        `*CHATBOT SETUP*\n\nStatus: ${status}\n\n` +
+        '*.chatbot on* — reply when tagged or replied to\n' +
+        '*.chatbot auto* — reply to *every* message (auto-respond)\n' +
+        `*Auto cooldown:* ${Math.round(AUTO_COOLDOWN_MS / 1000)}s per chat\n` +
+        '*.chatbot off* — disable both modes'
       );
     }
 
@@ -258,22 +333,35 @@ module.exports = {
       return extra.reply(config.messages.adminOnly);
     }
 
-    if (match === 'on') {
-      if (database.getGroupSettings(chatId).chatbot) {
-        return extra.reply('*Chatbot is already enabled for this group*');
+    if (match === 'on' || match === 'mention') {
+      const settings = database.getGroupSettings(chatId);
+      if (settings.chatbot && !settings.chatbotAuto) {
+        return extra.reply('*Chatbot is already on (mention only) for this group*');
       }
-      database.updateGroupSettings(chatId, { chatbot: true });
-      return extra.reply('*Chatbot enabled! @tag or reply to chat with the bot.*');
+      database.updateGroupSettings(chatId, { chatbot: true, chatbotAuto: false });
+      return extra.reply('*Chatbot enabled! @tag the bot or reply to its message.*');
+    }
+
+    if (match === 'auto') {
+      const settings = database.getGroupSettings(chatId);
+      if (settings.chatbotAuto) {
+        return extra.reply('*Auto-respond is already enabled for this group*');
+      }
+      database.updateGroupSettings(chatId, { chatbot: true, chatbotAuto: true });
+      return extra.reply(
+        `*Auto-respond enabled!* The bot will reply to every message (one reply per ${Math.round(AUTO_COOLDOWN_MS / 1000)}s).\n\nCommands still work normally.`
+      );
     }
 
     if (match === 'off') {
-      if (!database.getGroupSettings(chatId).chatbot) {
+      const settings = database.getGroupSettings(chatId);
+      if (!settings.chatbot && !settings.chatbotAuto) {
         return extra.reply('*Chatbot is already disabled for this group*');
       }
-      database.updateGroupSettings(chatId, { chatbot: false });
+      database.updateGroupSettings(chatId, { chatbot: false, chatbotAuto: false });
       return extra.reply('*Chatbot disabled for this group*');
     }
 
-    return extra.reply('*Invalid command. Use .chatbot on or .chatbot off*');
+    return extra.reply('*Invalid command. Use .chatbot on, .chatbot auto, or .chatbot off*');
   }
 };

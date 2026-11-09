@@ -23,7 +23,7 @@ This project is **fully open source** — you can modify it, rebrand it, and bui
 - **Fully Open Source** – the entire codebase is editable; host it anywhere (Heroku, panel, VPS, etc.).
 - **Easy Customization via Commands** – change the **bot image**, **prefix**, **channel/newsletter**, **bot name**, etc. with simple commands.
 - **Modular Command System** – commands are organized in the `commands` folder for easy editing.
-- **AI & Chatbot** – AI chat, magic studio and chatbot integrations.
+- **AI & Chatbot** – AI chat, magic studio, and a chatbot that can answer @mentions or auto-respond to every message.
 - **Media Downloaders** – YouTube song/video, TikTok, Instagram, Facebook, Twitter and more.
 - **Group Management** – antilink, antispam, antidelete, welcome/goodbye, promote/demote, mute and more.
 - **Games & Economy** – RPG, slots, coinflip, hangman, quiz, fishing, hunting and a full economy system.
@@ -139,6 +139,19 @@ When the bot starts:
 | Crush 💘 | `.crush` `.crushscan` `.crushmeter` `.crushmenu` |
 
 > Type `.menu` in WhatsApp to see the complete, live command list.
+
+### 🤖 Auto-respond AI
+
+The chatbot has two modes, controlled per group by an admin:
+
+| Command | Behaviour |
+|---------|-----------|
+| `.chatbot on` | Replies only when the bot is **@mentioned** or someone **replies** to it |
+| `.chatbot auto` | Replies to **every text message** in the group (no mention needed) |
+| `.chatbot off` | Disables both modes |
+| `.chatbot` | Shows the current mode |
+
+Auto-respond keeps a **5 second cooldown per chat**, skips anything that looks like a command (`.`, `/`, `#`, `!`, …) and never fires a second request while one is in flight, so a busy group cannot flood the AI provider. Override the cooldown with `CHATBOT_AUTO_COOLDOWN_MS` (milliseconds). It uses the same Ladybug API `/v1/ai/chat` endpoint as mention mode.
 
 ### ⭐ Premium (paid) commands
 

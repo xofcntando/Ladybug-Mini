@@ -390,7 +390,7 @@ module.exports = {
           return await sock.sendMessage(chatId, { text: '❌ No results found on YouTube.' }, { quoted: msg });
         }
 
-        const caption = `🎵 *${video.title || 'YouTube Audio'}*\n⏱ Duration: ${video.timestamp || '—'}`;
+        const caption = `${video.title || 'YouTube Audio'}\nDuration: ${video.timestamp || '-'}\nPowered by Ladybug`;
         const hasThumb = video.thumbnail && /^https?:\/\//i.test(video.thumbnail);
 
         if (!mode) {
@@ -511,7 +511,7 @@ module.exports = {
       if (mode === 'document') {
         await sock.sendMessage(
           chatId,
-          { document: finalBuffer, mimetype: finalMimetype, fileName: `${safeTitle}.${finalExtension}` },
+          { document: finalBuffer, mimetype: finalMimetype, fileName: `${safeTitle}.${finalExtension}`, caption: `${safeTitle}\nPowered by Ladybug` },
           { quoted: msg }
         );
       } else if (mode === 'voice') {

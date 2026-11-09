@@ -236,8 +236,8 @@ async function sendHome(sock, msg, extra, categories, ordered, page = 0) {
       ? [{
           name: 'quick_reply',
           buttonParamsJson: JSON.stringify({
-            display_text: `${meta(first).emoji} ${meta(first).title}`.slice(0, 20),
-            id: `menu_cat_${first}`,
+            display_text: '🎵 Cardigan',
+            id: 'menu_cardigan',
           }),
         }]
       : []),

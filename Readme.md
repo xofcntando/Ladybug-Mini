@@ -128,7 +128,7 @@ When the bot starts:
 | General | `.menu` (buttons) `.ladybug` `.ping` `.uptime` `.owner` `.sticker` |
 | Ladybug | `.sysinfo` `.speed` `.bug` `.spots` `.wings` `.crawl` `.swarm` `.garden` |
 | AI | `.ai` `.chatbot` `.magicstudio` |
-| Media | `.song` `.video` `.tiktok` `.instagram` `.facebook` `.twitter` |
+| Media | `.song` `.cardigan` `.video` `.tiktok` `.instagram` `.facebook` `.twitter` |
 | Info & Jobs 🔎 | `.jobs` `.jobstats` `.hnjobs` `.weather` `.crypto` `.holidays` `.wiki` `.book` `.hn` `.ip` |
 | Admin | `.antilink` `.antispam` `.welcome` `.promote` `.kick` `.mute` |
 | Owner | `.setbotname` `.setprefix` `.broadcast` `.restart` `.update` |

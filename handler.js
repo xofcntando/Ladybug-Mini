@@ -675,6 +675,10 @@ const handleMessage = async (sock, msg) => {
         await runButtonCommand('list');
         return;
       }
+      if (selectedId === 'menu_cardigan') {
+        await runButtonCommand('cardigan');
+        return;
+      }
 
       // Menu buttons: menu_all | menu_home | menu_cat_<category> | menu_page_<n>
       const menuTap = /^menu_(all|home|cat_([a-z0-9_]+)|page_(\d+))$/.exec(selectedId);

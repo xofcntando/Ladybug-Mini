@@ -1040,6 +1040,14 @@ const handleMessage = async (sock, msg) => {
       }
     }
 
+    // DM auto-responder (owner-controlled with .autoreply on|off)
+    if (!msg.key.fromMe && !isGroup && body && !body.startsWith(config.prefix)) {
+      if (database.getGlobalSettings().chatbotAutoDM) {
+        await chatbotCmd.handleAutoReply(sock, msg, body, sender);
+        return;
+      }
+    }
+
     // Numbered menu navigation — works even when native buttons are not rendered
     if (!body.startsWith(config.prefix)) {
       const menuCmd = commands.get('menu');

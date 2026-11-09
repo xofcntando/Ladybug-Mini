@@ -12,6 +12,7 @@ const USERS_DB = path.join(DB_PATH, 'users.json');
 const WARNINGS_DB = path.join(DB_PATH, 'warnings.json');
 const MODS_DB = path.join(DB_PATH, 'mods.json');
 const SUDO_DB = path.join(DB_PATH, 'sudo.json');
+const SETTINGS_DB = path.join(DB_PATH, 'settings.json');
 
 // Initialize database directory
 if (!fs.existsSync(DB_PATH)) {
@@ -30,6 +31,7 @@ initDB(USERS_DB, {});
 initDB(WARNINGS_DB, {});
 initDB(MODS_DB, { moderators: [] });
 initDB(SUDO_DB, { sudoUsers: [] });
+initDB(SETTINGS_DB, {});
 
 // Read database
 const readDB = (filePath) => {
@@ -67,6 +69,19 @@ const updateGroupSettings = (groupId, settings) => {
   const groups = readDB(GROUPS_DB);
   groups[groupId] = { ...groups[groupId], ...settings };
   return writeDB(GROUPS_DB, groups);
+};
+
+// Global (bot-wide) settings
+const DEFAULT_GLOBAL_SETTINGS = { chatbotAutoDM: false };
+
+const getGlobalSettings = () => {
+  const stored = readDB(SETTINGS_DB);
+  return { ...DEFAULT_GLOBAL_SETTINGS, ...stored };
+};
+
+const updateGlobalSettings = (settings) => {
+  const current = readDB(SETTINGS_DB);
+  return writeDB(SETTINGS_DB, { ...current, ...settings });
 };
 
 // User Data
@@ -227,6 +242,8 @@ const isSudoUser = (sender) => {
 module.exports = {
   getGroupSettings,
   updateGroupSettings,
+  getGlobalSettings,
+  updateGlobalSettings,
   getUser,
   updateUser,
   getWarnings,

@@ -65,15 +65,14 @@ async function ladybugVideoDownload({ url, query, quality = DEFAULT_QUALITY }) {
       }
 
       const file = data?.file || data?.result || data;
-      const dl_url = file?.id
-        ? `${YT_API}/dl/${file.id}`
-        : pickUrl(file);
+      // Use the link the API returns. file.id is the YouTube video id, NOT the /dl/ file id.
+      const dl_url = pickUrl(file) || pickUrl(data) || (data?.file?.id ? `${YT_API}/dl/${data.file.id}` : null); // /v1/media/* returns {file:{id}} = real file id
 
       if (dl_url) {
         return {
-          title: data.title || file.title || 'Video',
+          title: file.title || data.title || 'Video',
           dl_url,
-          sourceUrl: data.webpage_url || url,
+          sourceUrl: file.url || data.webpage_url || url,
         };
       }
     } catch (e) {
@@ -124,7 +123,7 @@ module.exports = {
         chatId,
         {
           video: { url: result.dl_url },
-          caption: `🎬 *${result.title || 'Video'}*\\n> Powered by Ladybug`,
+          caption: `🎬 *${result.title || 'Video'}*\n> Powered by Ladybug`,
           mimetype: 'video/mp4',
         },
         { quoted: msg }
